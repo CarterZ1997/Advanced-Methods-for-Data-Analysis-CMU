@@ -1,0 +1,202 @@
+---
+title: "HW6"
+author: "Shaojie Zhang (shaojiez)"
+date: "02/28/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##### Problem 1
+```{r}
+housetrain=read.csv("housetrain.csv",header=T)
+housetest=read.csv("housetest.csv",header=T)
+housedata=rbind(housetrain,housetest)
+```
+#### a
+```{r}
+B=200
+original=rep(1:5,10605/5)
+preddiff=NULL
+
+for(b in 1:B){
+  new=sample(original)
+  boot=sample(10605,10605,replace=T)
+  temp=housedata[boot,]
+  prederr2=NULL
+  prederr3=NULL
+  
+  for(j in 1:5){
+   traind=temp[new!=j,]
+   testd=temp[new==j,]
+   model2=lm(Median_house_value ~ Mean_household_income,data=traind)
+   prederr2[j]=mean((predict(model2,newdata=testd) - testd$Median_house_value)^2)
+   model3=lm(Median_house_value ~ Mean_household_income + Median_household_income,data=traind)
+   prederr3[j]=mean((predict(model3,newdata=testd)-testd$Median_house_value)^2)
+  }
+  
+  preddiff[b]=mean(prederr2-prederr3)
+}
+
+hist(preddiff)
+```
+Since the prediction differences are all positive, so that we conclude model3 is better than model2.
+
+#### b
+```{r}
+qqnorm(preddiff)
+qqline(preddiff)
+
+t.test(preddiff)
+```
+From the t test, we should reject the null hypothesis. The qq plot is straight so model3 is better.
+
+##### Problem2
+#### a
+```{r}
+abalone=read.csv("fishdata.csv",header=T)
+plot(abalone$Diameter,abalone$Weight,pch=".",xlab="Diameter",ylab="Weight")
+```
+Since the trend of the curve is very obvious so that a linear regression will not serve as a good fit here.
+
+#### b
+```{r message=FALSE}
+library(np)
+```
+
+```{r}
+n = nrow(abalone)
+band=sd(abalone$Weight)/(n^0.2)
+kernel1=npreg(Weight~Diameter, data=abalone, bws = band)
+```
+
+#### c
+```{r}
+x0=100+5*c(0:110)
+x = as.data.frame(x0)
+names(x) = c("Diameter")
+
+bootfish=NULL
+for(b in 1:1000){
+  rows=sample(nrow(abalone),replace=T)
+  newfish=abalone[rows,]
+  newfit=npreg(Weight~Diameter, bws = band, data = newfish, newdata=x, residuals=T)
+  bootfish=rbind(bootfish, newfit$mean)
+}
+
+bootquant=apply(bootfish,2,quantile,prob=c(0.025,0.975))
+
+```
+
+```{r}
+plot(abalone$Diameter,abalone$Weight,pch=".",xlab="Diameter",ylab="Weight")
+lines(x0,newfit$mean)
+lines(x0,2*newfit$mean-bootquant[1,],lty=2)
+lines(x0,2*newfit$mean-bootquant[2,],lty=2)
+```
+
+##### Problem3
+#### a
+```{r}
+library(MASS)
+data(cats)
+
+lm1=lm(Hwt~Bwt,data=cats)
+
+par(mfrow=c(1,2))
+hist(lm1$resid[cats$Sex=="F"],xlab="Residuals",main="Female Residuals")
+hist(lm1$resid[cats$Sex=="M"],xlab="Residuals",main="Male Residuals")
+
+plot(lm1$fitted[cats$Sex=="F"],lm1$resid[cats$Sex=="F"], xlab="Fitted values",ylab="Residuals",main="Female Residuals")
+plot(lm1$fitted[cats$Sex=="M"],lm1$resid[cats$Sex=="M"], xlab="Fitted values",
+     ylab="Residuals", main="Male Residuals")
+```
+
+```{r}
+hist(cats$Bwt[cats$Sex=="F"],xlab="Body Weights",main="Female Body Weights")
+hist(cats$Bwt[cats$Sex=="M"],xlab="Body Weights",main="Male Body Weights")
+
+par(mfrow=c(1,1))
+summary(cats$Bwt[cats$Sex=="F"])
+summary(cats$Bwt[cats$Sex=="M"])
+```
+After a quick EDA on the data, from the hist we see that the male residuals are more spread out, and from the scatter plot we see that female frequency decrease as the residual increases. This suggests that the slope is wrong. And from the hist we see that the male residuals look like a gaussian distribution. Female body weights are smaller than the male body weights.
+
+#### b
+```{r}
+lm2=lm(Hwt~Bwt*Sex,data=cats)
+summary(lm2)
+
+lmF=lm(Hwt~Bwt,data=cats[cats$Sex=="F",])
+lmM=lm(Hwt~Bwt,data=cats[cats$Sex=="M",])
+summary(lmF)
+summary(lmM)
+```
+We need: thetahat*rhat(x;F)*p(F) + rhat(x;M)*p(M)
+
+```{r}
+means=c(mean(cats$Sex=="F"),mean(cats$Sex=="M"))
+thetahat=means[1]*lmF$coef+means[2]*lmM$coef
+thetahat
+```
+So the line is thetahat(x) = 3.766x + 0.175
+
+```{r}
+plot(cats$Bwt,cats$Hwt,xlab="Body Weight",ylab="Heart Weight")
+abline(lm1$coef,lty=1,col=1)
+abline(thetahat,lty=2,col=2)
+abline(lmF$coef,lty=3,col=3)
+abline(lmM$coef,lty=4,col=4)
+legend("topleft",legend=c("Marginal","Causal","Females","Males "),lty=c(1,2,3,4),col=c(1,2,3,4))
+```
+The marginal line is useful when we want to predict heart weight for a random cat drawn from the population of the sample.
+The causal line is useful when we want to predict the heart weight for a random cat drawn from a population where 1/3 of the cats are female.
+The female/male line is useful when we want to predict the heart weight for a female/male cat.
+
+#### c
+```{r}
+datf=(cats$Sex=="F")
+datm=(cats$Sex=="M")
+
+B=10000
+Tstar=NULL
+for(bb in 1:B){
+  mnoise=lmM$resid[sample(sum(datm),replace=T)]
+  fnoise=lmF$resid[sample(sum(datf),replace=T)]
+  
+  newym = data.frame(Bwt=cats$Bwt[cats$Sex=="M"], Hwt=lm1$coef[1]+lm1$coef[2]*cats$Bwt[cats$Sex=="M"]+mnoise)
+  newyf=data.frame(Bwt=cats$Bwt[cats$Sex=="F"],
+Hwt=lm1$coef[1]+lm1$coef[2]*cats$Bwt[cats$Sex=="F"]+fnoise)
+  
+  bootfitM=lm(Hwt~Bwt,data=newym)$coef
+  bootfitF=lm(Hwt~Bwt,data=newyf)$coef
+  
+  Tstar[bb]=(bootfitF[1]-bootfitM[1])^2+(bootfitF[2]-bootfitM[2])^2
+}
+
+tobs=(lmF$coef[1]-lmM$coef[1])^2+(lmF$coef[2]-lmM$coef[2])^2
+tobs
+```
+```{r}
+pvalue=mean(Tstar>=tobs)
+pvalue
+```
+So from the pvalue and tobs we can see that the probability of being in the part above the T=20.16 is 0.017. So we should reject the null hypothesis. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
